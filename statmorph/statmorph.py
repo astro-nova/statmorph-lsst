@@ -29,7 +29,7 @@ __version__ = '0.4.0'
 
 # A list of all the quantities that are calculated by SourceMorphology:
 _quantity_names = [
-    # 'xc_centroid',
+    'xc_centroid',
     'yc_centroid',
     'ellipticity_centroid',
     'elongation_centroid',
