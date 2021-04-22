@@ -296,6 +296,9 @@ class SourceMorphology(object):
         this keyword argument will make the code run slower by a
         factor of a few, depending on the size of the PSF, but the
         resulting Sersic fits will in principle be more correct.
+    noiseless: bool, optional
+        Set to True if the image is noiseless. Morphological parameters
+        will use noise-free alternative definitions (Sazonova et al., in prep)
     cutout_extent : float, optional
         The target fractional size of the data cutout relative to
         the minimal bounding box containing the source. The value
@@ -372,13 +375,15 @@ class SourceMorphology(object):
 
     """
     def __init__(self, image, segmap, label, mask=None, weightmap=None,
-                 gain=None, psf=None, cutout_extent=1.5, min_cutout_size=48,
+                 gain=None, psf=None, noiseless=False,
+                 cutout_extent=1.5, min_cutout_size=48,
                  n_sigma_outlier=10, annulus_width=1.0,
                  eta=0.2, petro_fraction_gini=0.2, skybox_size=32,
                  petro_extent_cas=1.5, petro_fraction_cas=0.25,
                  boxcar_size_mid=3.0, niter_bh_mid=5, sigma_mid=1.0,
                  petro_extent_flux=2.0, boxcar_size_shape_asym=3.0,
                  sersic_maxiter=500, segmap_overlap_ratio=0.25, verbose=False):
+
         self._image = image
         self._segmap = segmap
         self.label = label
@@ -403,6 +408,7 @@ class SourceMorphology(object):
         self._sersic_maxiter = sersic_maxiter
         self._segmap_overlap_ratio = segmap_overlap_ratio
         self._verbose = verbose
+        self._noiseless = noiseless
 
         # Measure runtime
         start = time.time()
@@ -420,7 +426,10 @@ class SourceMorphology(object):
             assert self._weightmap.shape == self._image.shape
 
         if self._weightmap is None and self._gain is None:
-            raise AssertionError('Must provide either weightmap or gain.')
+            if self._noiseless:
+                self._weightmap = np.ones(self._image.shape)
+            else:
+                raise AssertionError('Must provide either weightmap or gain.')
 
         # Normalize PSF
         if self._psf is not None:
@@ -469,7 +478,7 @@ class SourceMorphology(object):
         self._calculate_morphology()
 
         # Check if image is background-subtracted; set flag=1 if not.
-        if np.abs(self.sky_mean) > self.sky_sigma:
+        if (np.abs(self.sky_mean) > self.sky_sigma) & (not self._noiseless):
             warnings.warn('Image is not background-subtracted.', AstropyUserWarning)
             self.flag = 1
 
@@ -837,6 +846,7 @@ class SourceMorphology(object):
         """
         Similar to ``_mask_stamp``, but also mask the background.
         """
+        if self._noiseless: return self._mask_stamp
         segmap_stamp = self._segmap.data[self._slice_stamp]
         return self._mask_stamp | (segmap_stamp == 0)
 
@@ -1343,6 +1353,10 @@ class SourceMorphology(object):
         """
         Calculate the signal-to-noise per pixel using the Petrosian segmap.
         """
+
+        if self._noiseless:
+            return np.inf
+
         weightmap = self._weightmap_stamp
         if np.any(weightmap < 0):
             warnings.warn('[sn_per_pixel] Some negative weightmap values.',
@@ -1374,6 +1388,8 @@ class SourceMorphology(object):
         In principle, a more accurate approach is possible
         (e.g. Shi et al. 2009, ApJ, 697, 1764).
         """
+
+        if self._noiseless: slice(0, 0), slice(0, 0)
         segmap = self._segmap.data[self._slice_stamp]
         ny, nx = segmap.shape
         mask = np.zeros(segmap.shape, dtype=np.bool8)
@@ -1405,7 +1421,10 @@ class SourceMorphology(object):
     def sky_mean(self):
         """
         Mean background value. Equal to -99.0 when there is no skybox.
+        Equal to 0 if noiseless.
         """
+
+        if self._noiseless: return 0
         bkg = self._cutout_stamp_maskzeroed[self._slice_skybox]
         if bkg.size == 0:
             assert self.flag == 1
@@ -1417,7 +1436,9 @@ class SourceMorphology(object):
     def sky_median(self):
         """
         Median background value. Equal to -99.0 when there is no skybox.
+        Equal to 0 if noiseless.
         """
+        if self._noiseless: return 0
         bkg = self._cutout_stamp_maskzeroed[self._slice_skybox]
         if bkg.size == 0:
             assert self.flag == 1
@@ -1429,8 +1450,9 @@ class SourceMorphology(object):
     def sky_sigma(self):
         """
         Standard deviation of the background. Equal to -99.0 when there
-        is no skybox.
+        is no skybox. Equal to 0 if noiseless.
         """
+        if self._noiseless: return 0
         bkg = self._cutout_stamp_maskzeroed[self._slice_skybox]
         if bkg.size == 0:
             assert self.flag == 1
@@ -1443,7 +1465,11 @@ class SourceMorphology(object):
         """
         Asymmetry of the background. Equal to -99.0 when there is no
         skybox. Note the peculiar normalization (for reference only).
+        Equal to 0 if noiseless.
         """
+
+        if self._noiseless: return 0
+
         bkg = self._cutout_stamp_maskzeroed[self._slice_skybox]
         bkg_180 = bkg[::-1, ::-1]
         if bkg.size == 0:
@@ -1457,7 +1483,11 @@ class SourceMorphology(object):
         """
         Smoothness of the background. Equal to -99.0 when there is no
         skybox. Note the peculiar normalization (for reference only).
+        Equal to 0 if noiseless.
         """
+
+        if self._noiseless: return 0
+
         bkg = self._cutout_stamp_maskzeroed[self._slice_skybox]
         if bkg.size == 0:
             assert self.flag == 1
@@ -2170,7 +2200,16 @@ class SourceMorphology(object):
         as the point that minimizes the asymmetry, instead of the
         brightest pixel.
 
+        The purpose of the new binary detection mask is to robustly
+        identify tidal features in noisy data. For noiseless
+        (simulated) galaxy images, use the input segmentation
+        map instead. The input seg. map should represent the desired
+        surface brightness threshold.
         """
+
+        if self._noiseless:
+            return self._segmap.data[self._slice_stamp]==self.label
+
         ny, nx = self._cutout_stamp_maskzeroed.shape
 
         # Center at pixel that minimizes asymmetry

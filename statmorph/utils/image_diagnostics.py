@@ -8,7 +8,7 @@ debugging and/or examining the morphology of a source in detail.
 import numpy as np
 import sys
 import skimage.transform
-import statmorph
+from .. import statmorph
 from astropy.visualization import simple_norm
 
 __all__ = ['make_figure']
@@ -22,7 +22,7 @@ def make_figure(morph):
     """
     Creates a figure analogous to Fig. 4 from Rodriguez-Gomez et al. (2019)
     for a given ``SourceMorphology`` object.
-    
+
     Parameters
     ----------
     morph : ``statmorph.SourceMorphology``
@@ -39,6 +39,7 @@ def make_figure(morph):
     import matplotlib.colors
     import matplotlib.cm
 
+    print(isinstance(morph, statmorph.SourceMorphology))
     if not isinstance(morph, statmorph.SourceMorphology):
         raise TypeError('Input must be of type SourceMorphology.')
 
