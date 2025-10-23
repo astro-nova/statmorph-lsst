@@ -14,8 +14,8 @@ The installation instructions can be found on
 Full documentation describing the changes to the parent package is in preparation.
 Major changes as of now:
 
-* `isophote_asymmetry`: similar to shape asymmetry of `Pawlik et al. <https://ui.adsabs.harvard.edu/abs/2016MNRAS.456.3032P/abstract>`_, returns asymmetry of different flux isophotes given by `asymmetry_isophotes` argument. If None, isophotal asymmetry is not calculated. Ideally, isophotes should be defined by converting desired surface brightness limits to flux units.
-* `substructure`: similar to Smoothness of `Conselice et al. 2003<https://ui.adsabs.harvard.edu/abs/2003ApJS..147....1C/abstract>`_, with an additional step of detecting contiguous clumps on the smoothed residual. This is the same procedure as what is commonly used to find high-redshift clumps (e.g., `Shibuya 2016 <https://ui.adsabs.harvard.edu/abs/2016ApJ...821...72S/abstract>`_)
+* `isophote_asymmetry`: similar to shape asymmetry of `Pawlik et al. 2016 <https://ui.adsabs.harvard.edu/abs/2016MNRAS.456.3032P/abstract>`_, returns asymmetry of different flux isophotes given by `asymmetry_isophotes` argument. If None, isophotal asymmetry is not calculated. Ideally, isophotes should be defined by converting desired surface brightness limits to flux units.
+* `substructure`: similar to Smoothness of `Conselice et al. 2003 <https://ui.adsabs.harvard.edu/abs/2003ApJS..147....1C/abstract>`_, with an additional step of detecting contiguous clumps on the smoothed residual. This is the same procedure as what is commonly used to find high-redshift clumps (e.g., `Shibuya 2016 <https://ui.adsabs.harvard.edu/abs/2016ApJ...821...72S/abstract>`_)
 
 Tutorial / How to use
 ---------------------
