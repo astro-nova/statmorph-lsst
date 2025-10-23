@@ -22,7 +22,7 @@ Please see the
 Bias diagnostics and corrections
 ---------------------
 
-You can see the dependence of each parameter in this suite in the `diagnostic_plots` folder. Bias corrections are
+You can see the dependence of each parameter in this suite in the `diagnostic_plots <https://github.com/astro-nova/statmorph-lsst/tree/master/diagnostic_plots>`_ folder. Bias corrections are
 derived where possible with SymbolicRegression and are available in the paper (for now).
 
 Citing
@@ -32,4 +32,4 @@ If you use this code for a scientific publication, please cite the following
 article:
 
 - `Rodriguez-Gomez et al. (2019) <https://ui.adsabs.harvard.edu/abs/2019MNRAS.483.4140R>`_
-- `Sazonova et al. (in prep.)
+- Sazonova et al. (in prep.)
