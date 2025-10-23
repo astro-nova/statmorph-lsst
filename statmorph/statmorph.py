@@ -24,7 +24,7 @@ from astropy.convolution import convolve
 from photutils.aperture import (CircularAperture, CircularAnnulus,
                                 EllipticalAperture, EllipticalAnnulus)
 from photutils.background import ModeEstimatorBackground
-from photutils.segmentation import SegmentationImage
+from photutils.segmentation import SegmentationImage, detect_sources
 
 
 __all__ = [
@@ -483,6 +483,10 @@ class SourceMorphology(object):
     petro_fraction_cas : float, optional
         In the CAS calculations, this is the fraction of the Petrosian
         radius used as a smoothing scale. The default value is 0.25.
+    asymmetry_isophotes : array-like (float), optional
+        A set of isophote levels (in image flux units) at which to
+        compute the asymmetry. If not provided, isophotal asymmetry 
+        is not calculated.
     boxcar_size_mid : float, optional
         In the MID calculations, this is the size (in pixels)
         of the constant kernel used to regularize the MID segmap.
@@ -556,6 +560,7 @@ class SourceMorphology(object):
                  n_sigma_outlier=10, annulus_width=1.0,
                  eta=0.2, petro_fraction_gini=0.2, skybox_size=32,
                  petro_extent_cas=1.5, petro_fraction_cas=0.25,
+                 asymmetry_isophotes=None,
                  boxcar_size_mid=3.0, niter_bh_mid=5, sigma_mid=1.0,
                  petro_extent_flux=2.0, boxcar_size_shape_asym=3.0,
                  sersic_fitting_args=None, sersic_model_args=None,
@@ -584,6 +589,7 @@ class SourceMorphology(object):
         self._niter_bh_mid = niter_bh_mid
         self._sigma_mid = sigma_mid
         self._petro_extent_flux = petro_extent_flux
+        self._asymmetry_isophotes = asymmetry_isophotes
         self._boxcar_size_shape_asym = boxcar_size_shape_asym
         self._sersic_fitting_args = sersic_fitting_args
         self._sersic_model_args = sersic_model_args
@@ -1641,9 +1647,26 @@ class SourceMorphology(object):
             return -99.0
 
         return np.sum(np.abs(bkg_180 - bkg)) / float(bkg.size)
+    
 
     @lazyproperty
-    def _sky_smoothness(self):
+    def _sky_smoothness_residual(self):
+        """Background residual used in the smoothness calculation."""
+        bkg = self._cutout_stamp_maskzeroed[self._slice_skybox]
+        if bkg.size == 0:
+            assert self.flag == 2
+            return None
+
+        # If the smoothing "boxcar" is larger than the skybox itself,
+        # this just sets all values equal to the mean:
+        boxcar_size = int(self._petro_fraction_cas * self.rpetro_circ)
+        bkg_smooth = ndi.uniform_filter(bkg, size=boxcar_size)
+        bkg_diff = bkg - bkg_smooth
+        return bkg_diff
+
+
+    @lazyproperty
+    def _sky_substructure(self):
         """
         Smoothness of the background. Equal to -99.0 when there is no
         skybox. Note the peculiar normalization (for reference only).
@@ -1652,16 +1675,33 @@ class SourceMorphology(object):
         if bkg.size == 0:
             assert self.flag == 2
             return -99.0
+        bkg_diff = self._sky_smoothness_residual
 
-        # If the smoothing "boxcar" is larger than the skybox itself,
-        # this just sets all values equal to the mean:
-        boxcar_size = int(self._petro_fraction_cas * self.rpetro_circ)
-        bkg_smooth = ndi.uniform_filter(bkg, size=boxcar_size)
+        # Run source detection on the background
+        clump_size = 10
+        clump_segmap = detect_sources(bkg_diff, 1*self.sky_sigma, npixels=int(clump_size), connectivity=4)
+        if clump_segmap is None:
+            return 0.0  # no clumps detected
+        else:
+            # Relative flux in clumps
+            clumps = clump_segmap.data > 0
+            clump_fraction = np.sum(bkg[clumps]) / np.sum(bkg)
 
-        bkg_diff = bkg - bkg_smooth
+        return clump_fraction/ float(bkg.size)
+    
+    @lazyproperty
+    def _sky_smoothness(self):
+        """
+        Smoothness of the background. Equal to -99.0 when there is no
+        skybox.
+        """
+        bkg = self._cutout_stamp_maskzeroed[self._slice_skybox]
+        if bkg.size == 0:
+            assert self.flag == 2
+            return -99.0
+        bkg_diff = self._sky_smoothness_residual
         bkg_diff[bkg_diff < 0] = 0.0  # set negative pixels to zero
-
-        return np.sum(bkg_diff) / float(bkg.size)
+        return np.sum(bkg_diff) / np.sum(bkg)
 
     def _asymmetry_function(self, center, image, kind):
         """
@@ -1723,6 +1763,8 @@ class SourceMorphology(object):
                 self.flag = 2
                 return -99.0  # invalid
             ap = CircularAperture(center, self.rmax_circ)
+        elif kind == 'isophote':
+            pass # No aperture for the isophotal asymmetry
         else:
             raise NotImplementedError('Asymmetry kind not understood:', kind)
 
@@ -1752,6 +1794,9 @@ class SourceMorphology(object):
             else:
                 asym = (ap_sqr_diff - 2*ap_area*self.sky_sigma**2) / (
                         ap_sqr_sum - ap_area*self.sky_sigma**2)
+        elif kind == 'isophote':
+            # The isophotal asymmetry of the background is zero
+            asym = np.abs(image_180 - image) / np.abs(image) 
         else:
             if self._sky_asymmetry == -99.0:  # invalid skybox
                 asym = ap_abs_diff / ap_abs_sum
@@ -1941,6 +1986,82 @@ class SourceMorphology(object):
 
         return C
 
+
+    @lazyproperty
+    def _smoothness_residual(self):
+        """
+        Calculate smoothness and substructure residuals.
+        """
+        image = self._cutout_stamp_maskzeroed
+        boxcar_size = int(self._petro_fraction_cas * self.rpetro_circ)
+        image_smooth = ndi.uniform_filter(image, size=boxcar_size)
+        image_diff = image - image_smooth
+        return image_diff
+    
+    def _smoothness_func(self, s_type):
+        """Calculates smoothness (Conselice 2003, Eq. 11 of Lotz 2004)
+        or substructure (Sazonova, in prep.) based on the input flag."""
+
+        image = self._cutout_stamp_maskzeroed
+        image_diff = self._smoothness_residual
+
+        # Exclude central region during smoothness calculation:
+        r_in = self._petro_fraction_cas * self.rpetro_circ
+        r_out = self._petro_extent_cas * self.rpetro_circ
+        ap = CircularAnnulus(self._asymmetry_center, r_in, r_out)
+
+        # Total flux in the aperture
+        ap_area = ap.area_overlap(image, mask=self._mask_stamp)
+        ap_flux = ap.do_photometry(image, method='exact')[0][0]
+        if ap_flux <= 0:
+            warnings.warn('[smoothness] Nonpositive total flux.',
+                        AstropyUserWarning)
+            self.flag = 2
+            return -99.0  # invalid
+
+        # Smoothness, as defined in Eq. 11 of Lotz et al. (2004)
+        if s_type == 'smoothness':
+            image_diff[image_diff < 0] = 0.0  # set negative pixels to zero
+            ap_diff = ap.do_photometry(image_diff, method='exact')[0][0]
+
+            if self._sky_smoothness == -99.0:  # invalid skybox
+                S = ap_diff / ap_flux
+            else:
+                S = (ap_diff - ap_area*self._sky_smoothness) / ap_flux
+
+            if not np.isfinite(S):
+                warnings.warn('Invalid smoothness.', AstropyUserWarning)
+                self.flag = 2
+                return -99.0  # invalid
+
+            return S
+        
+        # Substructure, as defined in Sec. 3.5.2 of Sazonova et al. (in prep)
+        elif s_type == 'substructure':
+
+            residual_std = sigma_clipped_stats(image_diff)[2]
+            clump_size = 10
+            clump_segmap = detect_sources(image_diff, 1*residual_std, npixels=int(clump_size), connectivity=4)
+            if clump_segmap is None:
+                return 0.0  # no clumps detected
+            
+            # Mask out everything except clumps
+            clump_mask = clump_segmap.data == 0
+
+            # Calculating fluxes
+            clump_flux = ap.do_photometry(image, mask=clump_mask)[0][0] 
+            total_flux = ap.do_photometry(image)[0][0]
+
+            # Background contribution
+            if self._sky_substructure == -99.0:  # invalid skybox
+                bg_clump_flux = 0.0
+            else:
+                bg_clump_flux = self._sky_substructure * ap_area
+            St = (clump_flux-bg_clump_flux) / total_flux
+            return St
+        
+    
+
     @lazyproperty
     def smoothness(self):
         """
@@ -1948,39 +2069,14 @@ class SourceMorphology(object):
         from Lotz et al. (2004). Note that the original definition by
         Conselice (2003) includes an additional factor of 10.
         """
-        image = self._cutout_stamp_maskzeroed
-
-        # Exclude central region during smoothness calculation:
-        r_in = self._petro_fraction_cas * self.rpetro_circ
-        r_out = self._petro_extent_cas * self.rpetro_circ
-        ap = CircularAnnulus(self._asymmetry_center, r_in, r_out)
-
-        boxcar_size = int(self._petro_fraction_cas * self.rpetro_circ)
-        image_smooth = ndi.uniform_filter(image, size=boxcar_size)
-
-        image_diff = image - image_smooth
-        image_diff[image_diff < 0] = 0.0  # set negative pixels to zero
-
-        ap_flux = ap.do_photometry(image, method='exact')[0][0]
-        ap_diff = ap.do_photometry(image_diff, method='exact')[0][0]
-
-        if ap_flux <= 0:
-            warnings.warn('[smoothness] Nonpositive total flux.',
-                          AstropyUserWarning)
-            self.flag = 2
-            return -99.0  # invalid
-
-        if self._sky_smoothness == -99.0:  # invalid skybox
-            S = ap_diff / ap_flux
-        else:
-            S = (ap_diff - ap.area*self._sky_smoothness) / ap_flux
-
-        if not np.isfinite(S):
-            warnings.warn('Invalid smoothness.', AstropyUserWarning)
-            self.flag = 2
-            return -99.0  # invalid
-
-        return S
+        return self._smoothness_func(self, 'smoothness')
+    
+    @lazyproperty
+    def substructure(self):
+        """
+        Calculate substructure as defined in Sec. 3.5.2 of Sazonova et al. (in prep),
+        """
+        return self._smoothness_func(self, 'substructure')
 
     ##################
     # MID statistics #
@@ -2553,6 +2649,32 @@ class SourceMorphology(object):
         asym = self._asymmetry_function(self._asymmetry_center, image, 'shape')
 
         return asym
+    
+    @lazyproperty
+    def isophote_asymmetry(self):
+        """
+        Calculate isophote asymmetry as described in Sazonova et al.
+        Note that the center is the one used for the standard asymmetry.
+        Returns a range of measurements, one for each surface brightness limit as defined in 
+        self._isophote_asymmetry_levels. Users should convert the surface brightness thresholds 
+        to image flux units before calling this function. If no levels are defined, returns -99.
+        """
+        if self._asymmetry_isophotes is None:
+            warnings.warn('[isophote_asymmetry] No isophote levels defined. Please use ``asymmetry_isophotes`` keyword argument.',
+                          AstropyUserWarning)
+            return -99.0 
+        
+        asym_values = []
+        for level in self._asymmetry_isophotes:
+            image = self._cutout_stamp_maskzeroed >= level
+            # Smooth the isophote mask slightly to avoid pixelation effects
+            kernel_size = self._boxcar_size_shape_asym
+            image = ndi.gaussian_filter(image, kernel_size, truncate=1)
+            image = (image > 0.5).astype(bool)    
+            # Calculate asymmetry for this isophote
+            asym = self._asymmetry_function(self._asymmetry_center, image, 'isophote')
+            asym_values.append(asym)
+        return asym_values
 
     ####################
     # SERSIC MODEL FIT #
