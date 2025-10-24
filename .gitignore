@@ -3,8 +3,11 @@
 __pycache__/*
 
 # Images
-*.png
-plots/*
+# *.png
+# plots/*
+
+# FITS files
+test_suite/data/*
 
 # Profiling
 *.prof
