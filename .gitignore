@@ -24,6 +24,12 @@ statmorph.egg-info/*
 # PyCharm stuff
 .idea
 
+# Jupyter files
+*.ipynb_checkpoints
+*.DS_Store
+diagnostic_plots/.DS_Store
+
 # Other, custom
 *.sh
 notebooks/.ipynb_checkpoints/*
+.vscode/*
