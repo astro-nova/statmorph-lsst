@@ -9,7 +9,7 @@ Documentation
 -------------
 
 The installation instructions can be found on
-`ReadTheDocs <http://statmorph.readthedocs.io/en/latest/>`_.
+`statmorph ReadTheDocs <http://statmorph.readthedocs.io/en/latest/>`_.
 
 Full documentation describing the changes to the parent package is in preparation.
 Major changes as of now:
