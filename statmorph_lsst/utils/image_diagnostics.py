@@ -7,7 +7,7 @@ debugging and/or examining the morphology of a source in detail.
 
 import numpy as np
 import skimage.transform
-import statmorph
+import statmorph_lsst
 from astropy.visualization import simple_norm
 
 __all__ = ['make_figure']
@@ -38,7 +38,7 @@ def make_figure(morph):
     import matplotlib.colors
     import matplotlib.cm
 
-    if not isinstance(morph, statmorph.SourceMorphology):
+    if not isinstance(morph, statmorph_lsst.statmorph.SourceMorphology):
         raise TypeError('Input must be of type SourceMorphology.')
 
     if morph.flag == 4:

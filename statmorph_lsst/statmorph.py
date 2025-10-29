@@ -329,7 +329,7 @@ def _enclosed_masked_regions(mask: np.ndarray) -> np.ndarray:
 
     return partially_enclosed
 
-def _interpolate_missing_pixels(image: np.ndarray, mask: np.ndarray, interpolator='inpaint') -> np.ndarray:
+def _interpolate_missing_pixels(image: np.ndarray, mask: np.ndarray, interpolator='pandas') -> np.ndarray:
     """Interpolates over the chip gap and bad pixels using astropy's interpolation.
     Args:
         image: NxN image array
@@ -341,6 +341,7 @@ def _interpolate_missing_pixels(image: np.ndarray, mask: np.ndarray, interpolato
     # Only interpolate over enclosed regions
     enclosed_mask = _enclosed_masked_regions(mask)
     image_interp = image.copy()  
+    image_interp[mask] = np.nan
 
     if interpolator == 'inpaint':
         from skimage.restoration import inpaint         
@@ -350,6 +351,13 @@ def _interpolate_missing_pixels(image: np.ndarray, mask: np.ndarray, interpolato
     elif interpolator == 'pandas':
         import pandas as pd
         image_interp = pd.DataFrame(image_interp).interpolate(
+            axis=0,
+            method="linear",
+            limit_direction="both",
+            limit_area="inside"  # <-- only fill interior NaN runs
+        ).values
+        image_interp = pd.DataFrame(image_interp).interpolate(
+            axis=1,
             method="linear",
             limit_direction="both",
             limit_area="inside"  # <-- only fill interior NaN runs
@@ -358,7 +366,7 @@ def _interpolate_missing_pixels(image: np.ndarray, mask: np.ndarray, interpolato
     else:
         print('Unknown interpolator, skipping')
 
-    mask_interp = mask & ~enclosed_mask
+    mask_interp = np.isnan(image_interp)
     return image_interp, mask_interp
 
 class ConvolvedSersic2D(models.Sersic2D):
@@ -1159,6 +1167,7 @@ class SourceMorphology(object):
         mask = self._mask_stamp
         image_interp, mask_interp = _interpolate_missing_pixels(image, mask)
         self._mask_stamp_interp = mask_interp
+        image_interp[mask_interp] = 0
         return image_interp
 
     @lazyproperty
@@ -1832,12 +1841,18 @@ class SourceMorphology(object):
         else:
             raise NotImplementedError('Asymmetry kind not understood:', kind)
 
-        # Aperture area (in pixels)
-        ap_area = ap.area_overlap(image, mask=mask_symmetric)
+        # Do aperture photometry
+        if kind != 'isophote':
+            # Aperture area (in pixels)
+            ap_area = ap.area_overlap(image, mask=mask_symmetric)
 
-        # Apply eq. 10 from Lotz et al. (2004)
-        ap_abs_sum = ap.do_photometry(np.abs(image), method='exact')[0][0]
-        ap_abs_diff = ap.do_photometry(np.abs(image_180-image), method='exact')[0][0]
+            # Apply eq. 10 from Lotz et al. (2004)
+            ap_abs_sum = ap.do_photometry(np.abs(image), method='exact')[0][0]
+            ap_abs_diff = ap.do_photometry(np.abs(image_180-image), method='exact')[0][0]
+        else:
+            ap_area = np.sum(~mask_symmetric)
+            ap_abs_sum = np.sum(np.abs(image))
+            ap_abs_diff = np.sum(np.abs(image_180 - image))
 
         if ap_abs_sum == 0.0:
             warnings.warn('[asymmetry_function] Zero flux sum.',
@@ -1846,7 +1861,7 @@ class SourceMorphology(object):
             # Return large value to get minimizer out of masked region:
             return 100.0
 
-        if kind == 'shape':
+        if (kind == 'shape') or (kind == 'isophote'):
             # The shape asymmetry of the background is zero
             asym = ap_abs_diff / ap_abs_sum
         elif kind == 'rms':
@@ -1858,9 +1873,6 @@ class SourceMorphology(object):
             else:
                 asym = (ap_sqr_diff - 2*ap_area*self.sky_sigma**2) / (
                         ap_sqr_sum - ap_area*self.sky_sigma**2)
-        elif kind == 'isophote':
-            # The isophotal asymmetry of the background is zero
-            asym = np.abs(image_180 - image) / np.abs(image) 
         else:
             if self._sky_asymmetry == -99.0:  # invalid skybox
                 asym = ap_abs_diff / ap_abs_sum

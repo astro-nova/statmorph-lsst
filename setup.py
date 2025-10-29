@@ -10,7 +10,7 @@ with open(path.join(here, 'README.rst'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
-    name='statmorph',
+    name='statmorph-lsst',
     version='0.7.1',
     description='Non-parametric morphological diagnostics of galaxy images',
     long_description=long_description,
@@ -27,7 +27,7 @@ setup(
         'Topic :: Scientific/Engineering :: Astronomy',
     ],
     keywords='astronomy galaxies galaxy-morphology non-parametric',
-    packages=['statmorph', 'statmorph.tests'],
+    packages=['statmorph_lsst', 'statmorph_lsst.tests'],
     include_package_data=True,
     install_requires=['numpy>=1.14.0',
                       'scipy>=0.19',
