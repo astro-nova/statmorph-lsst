@@ -2069,14 +2069,14 @@ class SourceMorphology(object):
         from Lotz et al. (2004). Note that the original definition by
         Conselice (2003) includes an additional factor of 10.
         """
-        return self._smoothness_func(self, 'smoothness')
+        return self._smoothness_func('smoothness')
     
     @lazyproperty
     def substructure(self):
         """
         Calculate substructure as defined in Sec. 3.5.2 of Sazonova et al. (in prep),
         """
-        return self._smoothness_func(self, 'substructure')
+        return self._smoothness_func('substructure')
 
     ##################
     # MID statistics #
