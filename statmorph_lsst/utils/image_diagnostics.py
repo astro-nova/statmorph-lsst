@@ -8,7 +8,9 @@ debugging and/or examining the morphology of a source in detail.
 import numpy as np
 import skimage.transform
 import statmorph_lsst
-from astropy.visualization import simple_norm
+from astropy.visualization import simple_norm, AsinhStretch, AsymmetricPercentileInterval
+from astropy.stats import sigma_clipped_stats
+from photutils.aperture import CircularAnnulus
 
 __all__ = ['make_figure']
 
@@ -49,7 +51,7 @@ def make_figure(morph):
     # inter-panel spacings to have the same size, so instead let's do
     # everything manually:
     nrows = 2
-    ncols = 4
+    ncols = 5
     wpanel = 4.0  # panel width
     hpanel = 4.0  # panel height
     htop = 0.05*nrows*hpanel  # top margin and vertical space between panels
@@ -325,6 +327,46 @@ def make_figure(morph):
     ax.get_xaxis().set_visible(False)
     ax.get_yaxis().set_visible(False)
 
+    ##########################
+    # Smoothness residual #
+    ##########################
+    im = morph._smoothness_residual
+    std = sigma_clipped_stats(im, mask=morph._mask_stamp)[2]
+    r_in = morph._petro_fraction_cas * morph.rpetro_circ
+    r_out = morph._petro_extent_cas * morph.rpetro_circ
+    ap = CircularAnnulus(morph._asymmetry_center, r_in, r_out)
+    
+    ax = _get_ax(fig, 0, 4, nrows, ncols, wpanel, hpanel, htop, eps, wfig, hfig)
+    ax.imshow(im, vmin=-3*std, vmax=3*std, cmap='gray', origin='lower')
+    ax.contour(morph._clump_segmap.data > 0, colors='C9', linewidths=1.5, levels=[0.9, 1.1])
+    ap.plot(ax, lw=1, color='k', label='Smoothness aperture')
+
+    text = (r'$St = %.4f$' % (morph.substructure))
+    ax.text(0.034, 0.034, text, fontsize=12,
+            horizontalalignment='left', verticalalignment='bottom',
+            transform=ax.transAxes,
+            bbox=dict(facecolor='white', alpha=1.0, boxstyle='round'))
+    ax.legend(loc=4, fontsize=12, facecolor='w', framealpha=1.0, edgecolor='k')
+    ax.set_xlim(-0.5, nx-0.5)
+    ax.set_ylim(-0.5, ny-0.5)
+    ax.set_title('Shape Asymmetry Segmap', fontsize=14)
+    ax.get_xaxis().set_visible(False)
+    ax.get_yaxis().set_visible(False)
+
+
+    ##########################
+    # Isophotal asymmetry #
+    ##########################
+    im = morph._cutout_stamp_maskzeroed.copy()
+    stretch = AsinhStretch(0.3)
+    norm = AsymmetricPercentileInterval(0.5, 99.5)
+    im = stretch(norm(im))
+    ax = _get_ax(fig, 1, 4, nrows, ncols, wpanel, hpanel, htop, eps, wfig, hfig)
+    ax.imshow(im, cmap='gray', origin='lower')
+    if morph._asymmetry_isophotes is not None:
+        for i, iso in enumerate(morph._isophotes):
+            color = plt.get_cmap('plasma_r')(i/len(morph._isophotes))
+            ax.contour(iso, levels=[0.9,1.1], colors=[color], linewidths=1)
     fig.subplots_adjust(left=eps/wfig, right=1-eps/wfig, bottom=eps/hfig,
                         top=1.0-htop/hfig, wspace=eps/wfig, hspace=htop/hfig)
 
