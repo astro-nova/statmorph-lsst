@@ -539,6 +539,11 @@ class SourceMorphology(object):
     petro_fraction_cas : float, optional
         In the CAS calculations, this is the fraction of the Petrosian
         radius used as a smoothing scale. The default value is 0.25.
+    asymmetry_center_kind : {'rms', 'cas'}, optional
+        This specifies the method used to determine the asymmetry center.
+        If 'rms', the center is chosen to minimize the RMS asymmetry.
+        If 'cas', the center is chosen to minimize the CAS asymmetry.  
+        The default value is 'rms'.
     asymmetry_isophotes : array-like (float), optional
         A set of isophote levels (in image flux units) at which to
         compute the asymmetry. If not provided, isophotal asymmetry 
@@ -616,6 +621,7 @@ class SourceMorphology(object):
                  n_sigma_outlier=10, annulus_width=1.0,
                  eta=0.2, petro_fraction_gini=0.2, skybox_size=32,
                  petro_extent_cas=1.5, petro_fraction_cas=0.25,
+                 asymmetry_center_kind='rms',
                  asymmetry_isophotes=None,
                  boxcar_size_mid=3.0, niter_bh_mid=5, sigma_mid=1.0,
                  petro_extent_flux=2.0, boxcar_size_shape_asym=3.0,
@@ -1889,7 +1895,7 @@ class SourceMorphology(object):
         """
         centroid = np.array([self._xc_stamp, self._yc_stamp])  # initial guess
         center_asym = opt.fmin(self._asymmetry_function, centroid,
-                               args=(self._cutout_stamp_maskzeroed, 'cas'),
+                               args=(self._cutout_stamp_maskzeroed, self._asymmetry_center_kind),
                                xtol=1e-6, disp=False)
 
         # If the asymmetry center drifted too far away from the centroid,
@@ -1903,7 +1909,7 @@ class SourceMorphology(object):
             center_brightest = np.array([self._x_maxval_stamp,
                                          self._y_maxval_stamp])
             center_asym = opt.fmin(self._asymmetry_function, center_brightest,
-                                   args=(self._cutout_stamp_maskzeroed, 'cas'),
+                                   args=(self._cutout_stamp_maskzeroed, self._asymmetry_center_kind),
                                    xtol=1e-6, disp=False)
 
             # If the asymmetry center again drifted too far, just
@@ -2753,15 +2759,24 @@ class SourceMorphology(object):
             return -99.0 
         
         asym_values = []
+        isophote_masks = []
         for level in self._asymmetry_isophotes:
             image = self._cutout_stamp_maskzeroed >= level
+            
             # Smooth the isophote mask slightly to avoid pixelation effects
             kernel_size = self._boxcar_size_shape_asym
             image = ndi.gaussian_filter(image, kernel_size, truncate=1)
             image = (image > 0.5).astype(bool)    
+            isophote_masks.append(image)
+
+            if np.sum(image) == 0:
+                asym_values.append(np.nan)
+                continue
+
             # Calculate asymmetry for this isophote
             asym = self._asymmetry_function(self._asymmetry_center, image, 'isophote')
             asym_values.append(asym)
+        self._isophotes = isophote_masks
         return asym_values
 
     ####################
