@@ -349,7 +349,10 @@ def prep_julia_analysis(df, param, res_col, snr_col, csv_outpath='.'):
     # Save the data
     fit_data = fit_data.rename(columns={julia_res_col:'res', julia_snr_col:'snr'})
     fit_data.to_csv(f'{csv_outpath}', index=False)
-    return fig
+
+    df[f'{param}_noisy'] = fit_data[param]
+    df[f'base_{param}_noisy'] = fit_data[f'base_{param}']
+    return df, fig
 
 def julia_str_to_func(str):
     """Convert a Julia expression string to a Python function. Where an example string is "f = log10(#1) * (0.5398675057524245 + (-0.07107564733327766 / #2))"
@@ -400,9 +403,8 @@ def load_sr_results(julia_cat_path):
     julia_cat['best'] = julia_cat.Score == julia_cat.Score.max()
     return julia_cat
 
-def plot_correction(df, param, paramlabel, reslim=5, snrlim=2, xlims=None):
+def plot_correction(df, param, paramlabel, reslim=5, snrlim=2, xlims=None, noisy=True):
     """Makes a two-panel plot showing the parameter and corrected parameter distributions as a function of the baseline value."""
-
 
     # Define axis limits based on the parameter distribution
     if xlims is not None:
@@ -419,16 +421,18 @@ def plot_correction(df, param, paramlabel, reslim=5, snrlim=2, xlims=None):
     # With points or in the corner, overplot points with low resolution or low SNR
     fig, axs = plt.subplots(1, 2, figsize=(7.5,3.75), sharey=True)
 
-    yparams = [f'{param}', f'{param}_corr']
+    if noisy:
+        yparams = [f'{param}_noisy', f'{param}_noisy_corr']
+    else:
+        yparams = [f'{param}', f'{param}_corr']
     ylabels = [f'{paramlabel}', f'Corrected {paramlabel}']
     for ax, yparam, ylabel in zip(axs, yparams, ylabels):
 
-        plot_data = df[ (df[yparam] >= xmin) & (df[yparam] <= xmax)]
+        plot_data = df[ (df[yparam] >= xmin) & (df[yparam] <= xmax)].dropna(subset=[f'base_{param}', yparam, 'nres', 'snr_px'])
         
         # Smooth the data with a Gaussian KDE
-        bins = np.linspace(xmin,xmax,35)
-        kde = gaussian_kde(plot_data[[f'base_{param}', yparam]].dropna().sample(n=5000).values.T, bw_method=0.15)
-        
+        kde = gaussian_kde(plot_data[[f'base_{param}', yparam]].sample(n=5000).values.T, bw_method=0.15)
+
         # Define grid for evaluation
         npoints=100
         xs = np.linspace(xmin, xmax, npoints)
@@ -445,13 +449,17 @@ def plot_correction(df, param, paramlabel, reslim=5, snrlim=2, xlims=None):
 
         ###### Contour overlay of poor resolution ########
         bad_res_points = plot_data[plot_data.nres < reslim]
-        kde_bad = gaussian_kde(bad_res_points[[f'base_{param}', yparam]].dropna().values.T, bw_method=0.2)
+        arr = bad_res_points[[f'base_{param}', yparam]].dropna().values.T
+        kde_bad = gaussian_kde(bad_res_points[[f'base_{param}', yparam]].values.T, bw_method=0.2)
         density_bad = kde_bad(pts).reshape(npoints, npoints)
         ax.contour(Xs,Ys, density_bad, colors='k', linewidths=0.5)
-        
+
         ###### Contour overlay of poor SNR ########
         bad_snr_points = plot_data[plot_data.snr_px < snrlim]
-        kde_bad = gaussian_kde(bad_snr_points[[f'base_{param}', yparam]].dropna().values.T, bw_method=0.2)
+        try:
+            kde_bad = gaussian_kde(bad_snr_points[[f'base_{param}', yparam]].values.T, bw_method=0.2)
+        except:
+            return bad_snr_points
         density_bad = kde_bad(pts).reshape(npoints, npoints)
         ax.contour(Xs,Ys, density_bad, colors='w', linewidths=0.5)
 
@@ -486,7 +494,7 @@ def plot_correction(df, param, paramlabel, reslim=5, snrlim=2, xlims=None):
 
     return fig
 
-def symbolic_correction(df, param, julia_res_col, julia_snr_col, julia_cat, row_idx=None):
+def symbolic_correction(df, param, res_col, snr_col, julia_cat, row_idx=None):
     """Apply the Julia symbolic regression correction to the DataFrame. Either applies the correction from row `row_idx`, 
     or the simplest correction with Score>1 if `row_idx` is None.
     Args:
@@ -504,6 +512,10 @@ def symbolic_correction(df, param, julia_res_col, julia_snr_col, julia_cat, row_
     else:
         row = julia_cat.iloc[row_idx]
 
+    # Julia doesn't do logs of columns
+    julia_res_col = 'nres' if res_col == 'log_nres' else res_col # Symbolic regression can take the log, if needed
+    julia_snr_col = 'sn_per_pixel' if snr_col == 'log_snr' else 'sblim0'
+
     # Make a copy of the dataframe to no overwrite anything
     df_corr = df.copy()
 
@@ -512,4 +524,5 @@ def symbolic_correction(df, param, julia_res_col, julia_snr_col, julia_cat, row_
 
     # Apply the correction
     df_corr[f'{param}_corr'] = df_corr.apply(lambda x: corr_fun(x[f'base_{param}'], x[julia_res_col], x[julia_snr_col]), axis=1)
+    df_corr[f'{param}_noisy_corr'] = df_corr.apply(lambda x: corr_fun(x[f'base_{param}_noisy'], x[julia_res_col], x[julia_snr_col]), axis=1)
     return df_corr
