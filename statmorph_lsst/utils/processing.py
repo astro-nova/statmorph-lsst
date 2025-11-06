@@ -45,6 +45,8 @@ def rle_to_segmap(rle):
     """
     from pycocotools import mask as maskUtils
 
+    if rle is None:
+        return None
     if isinstance(rle, dict):
         # Single RLE case
         if type(rle["counts"]) is str:
