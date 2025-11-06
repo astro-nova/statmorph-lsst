@@ -7,7 +7,7 @@ debugging and/or examining the morphology of a source in detail.
 
 import numpy as np
 import skimage.transform
-import statmorph_lsst
+from statmorph_lsst import SourceMorphology
 from astropy.visualization import simple_norm, AsinhStretch, AsymmetricPercentileInterval
 from astropy.stats import sigma_clipped_stats
 from photutils.aperture import CircularAnnulus
@@ -40,7 +40,8 @@ def make_figure(morph):
     import matplotlib.colors
     import matplotlib.cm
 
-    if not isinstance(morph, statmorph_lsst.statmorph.SourceMorphology):
+    if not isinstance(morph, SourceMorphology):
+        print(type(morph), isinstance(morph, SourceMorphology))
         raise TypeError('Input must be of type SourceMorphology.')
 
     if morph.flag == 4:
@@ -256,7 +257,8 @@ def make_figure(morph):
             bbox=dict(facecolor='white', alpha=1.0, boxstyle='round'))
     text = (r'$C = %.4f$' % (morph.concentration,) + '\n' +
             r'$A = %.4f$' % (morph.asymmetry,) + '\n' +
-            r'$S = %.4f$' % (morph.smoothness,))
+            r'$S = %.4f$' % (morph.smoothness,) + '\n' + 
+            r'$A_{\rm{RMS}} = %.4f$' % (np.sqrt(morph.rms_asymmetry2),))
     ax.text(0.966, 0.034, text, fontsize=12,
             horizontalalignment='right', verticalalignment='bottom',
             transform=ax.transAxes,
@@ -338,7 +340,8 @@ def make_figure(morph):
     
     ax = _get_ax(fig, 0, 4, nrows, ncols, wpanel, hpanel, htop, eps, wfig, hfig)
     ax.imshow(im, vmin=-3*std, vmax=3*std, cmap='gray', origin='lower')
-    ax.contour(morph._clump_segmap.data > 0, colors='C9', linewidths=1.5, levels=[0.9, 1.1])
+    if morph._clump_segmap is not None:
+            ax.contour(morph._clump_segmap.data > 0, colors='C9', linewidths=1.5, levels=[0.9, 1.1])
     ap.plot(ax, lw=1, color='k', label='Smoothness aperture')
 
     text = (r'$St = %.4f$' % (morph.substructure))
@@ -349,7 +352,7 @@ def make_figure(morph):
     ax.legend(loc=4, fontsize=12, facecolor='w', framealpha=1.0, edgecolor='k')
     ax.set_xlim(-0.5, nx-0.5)
     ax.set_ylim(-0.5, ny-0.5)
-    ax.set_title('Shape Asymmetry Segmap', fontsize=14)
+    ax.set_title('Smoothness residual', fontsize=14)
     ax.get_xaxis().set_visible(False)
     ax.get_yaxis().set_visible(False)
 
@@ -367,6 +370,14 @@ def make_figure(morph):
         for i, iso in enumerate(morph._isophotes):
             color = plt.get_cmap('plasma_r')(i/len(morph._isophotes))
             ax.contour(iso, levels=[0.9,1.1], colors=[color], linewidths=1)
+    ax.set_xlim(-0.5, nx-0.5)
+    ax.set_ylim(-0.5, ny-0.5)
+    ax.set_title('Isophotes', fontsize=14)
+    ax.get_xaxis().set_visible(False)
+    ax.get_yaxis().set_visible(False)
+
+
+
     fig.subplots_adjust(left=eps/wfig, right=1-eps/wfig, bottom=eps/hfig,
                         top=1.0-htop/hfig, wspace=eps/wfig, hspace=htop/hfig)
 

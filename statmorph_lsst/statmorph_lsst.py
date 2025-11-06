@@ -791,6 +791,7 @@ class SourceMorphology(object):
         as "lazy" properties.
         """
         for q in _quantity_names:
+            # print(q)
             _ = self[q]
         if self._include_doublesersic:
             for q in _doublesersic_quantity_names:
@@ -1738,6 +1739,20 @@ class SourceMorphology(object):
 
         return np.sum(np.abs(bkg_180 - bkg)) / float(bkg.size)
     
+    @lazyproperty
+    def _sky_asymmetry_rms2(self):
+        """
+        RMS asymmetry of the background. Equal to -99.0 when there is no
+        skybox. Note the peculiar normalization (for reference only).
+        """
+        bkg = self._cutout_stamp_maskzeroed[self._slice_skybox]
+        bkg_180 = bkg[::-1, ::-1]
+        bkg_size = np.sum(~self._mask_stamp[self._slice_skybox])
+        if bkg.size == 0:
+            assert self.flag == 2
+            return -99.0
+        return np.sum((bkg_180 - bkg)**2) / float(bkg_size)
+    
 
     @lazyproperty
     def _sky_smoothness_residual(self):
@@ -1825,11 +1840,11 @@ class SourceMorphology(object):
             return 100.0
 
         # Rotate around given center
-        image_180 = skimage.transform.rotate(image, 180.0, center=center)
+        image_180 = skimage.transform.rotate(image, 180.0, center=center, order=0)
 
         # Apply symmetric mask
         mask = self._mask_stamp.copy()
-        mask_180 = skimage.transform.rotate(mask, 180.0, center=center)
+        mask_180 = skimage.transform.rotate(mask, 180.0, center=center, order=0)
         mask_180 = mask_180 >= 0.5  # convert back to bool
         mask_symmetric = mask | mask_180
         image = np.where(~mask_symmetric, image, 0.0)
@@ -2115,7 +2130,7 @@ class SourceMorphology(object):
         # Smoothness, as defined in Eq. 11 of Lotz et al. (2004)
         if s_type == 'smoothness':
             image_diff[image_diff < 0] = 0.0  # set negative pixels to zero
-            ap_diff = ap.do_photometry(image_diff, method='exact')[0][0]
+            ap_diff = ap.do_photometry(image_diff, method='exact', mask=self._mask_stamp)[0][0]
 
             if self._sky_smoothness == -99.0:  # invalid skybox
                 S = ap_diff / ap_flux
@@ -2629,8 +2644,9 @@ class SourceMorphology(object):
 
         # With the same shape as the postage stamp
         circ_annulus_mask = circ_annulus_mask.to_image((ny, nx))
+
         # Invert mask and exclude other sources
-        total_mask = self._mask | np.logical_not(circ_annulus_mask)
+        total_mask = self._mask_stamp | np.logical_not(circ_annulus_mask)
 
         # If sky area is too small (e.g., if annulus is outside the
         # image), use skybox instead.
@@ -2777,13 +2793,18 @@ class SourceMorphology(object):
             isophote_mask = self._cutout_stamp_maskzeroed >= level
             
             # Smooth the isophote mask slightly to avoid pixelation effects
-            kernel_size = sorted([1, isophote_mask.shape[0]/100, 5])[1]
+            kernel_size = sorted([3, isophote_mask.shape[0]/100, 5])[1]
             kernel = Gaussian2DKernel(kernel_size)
             isophote_mask = convolve_fft(isophote_mask.astype(float), kernel, mask=self._mask_stamp, boundary='wrap')
             isophote_mask = (isophote_mask > 0.5).astype(bool)    
             isophote_masks.append(isophote_mask)
 
             if np.sum(isophote_mask) == 0:
+                asym_values.append(np.nan)
+                continue
+
+            # Requite the isophote to have at least 30 pixels - otherwise it's too random
+            if np.sum(isophote_mask) < 30:
                 asym_values.append(np.nan)
                 continue
 

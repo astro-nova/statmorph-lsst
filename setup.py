@@ -27,7 +27,7 @@ setup(
         'Topic :: Scientific/Engineering :: Astronomy',
     ],
     keywords='astronomy galaxies galaxy-morphology non-parametric',
-    packages=['statmorph_lsst', 'statmorph_lsst.tests'],
+    packages=['statmorph_lsst', 'statmorph_lsst.tests', 'statmorph_lsst.utils'],
     include_package_data=True,
     install_requires=['numpy>=1.14.0',
                       'scipy>=0.19',
