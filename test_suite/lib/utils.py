@@ -272,8 +272,8 @@ def get_segmap(img, mask, bgsd,  min_area=5, hot_snr=20, cold_snr=1.5, nlevels=3
     
 
     # For large images, smooth the image to avoid detecting noise peaks
-    if img.shape[0] >= 300:
-        img_interp = ndi.gaussian_filter(img_interp, sigma=2, truncate=1)
+    # if img.shape[0] >= 300:
+    #     img_interp = ndi.gaussian_filter(img_interp, sigma=2, truncate=1)
 
     #### Hot run
     segmap_hot = detect_sources(img_interp, threshold=hot_snr*bgsd, 
