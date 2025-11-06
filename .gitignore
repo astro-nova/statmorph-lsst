@@ -20,6 +20,8 @@ docs/notebooks/.ipynb_checkpoints/*
 # Packaging
 dist/*
 statmorph.egg-info/*
+statmorph_lsst.egg-info/*
+build/*
 
 # PyCharm stuff
 .idea
