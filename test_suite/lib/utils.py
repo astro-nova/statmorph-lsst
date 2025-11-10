@@ -268,13 +268,14 @@ def get_segmap(img, mask, bgsd,  min_area=5, hot_snr=20, cold_snr=1.5, nlevels=3
     # else:
     #     img_interp = img.copy()
     img_interp = _interpolate_missing_pixels(img, mask)
-    mask_interp = np.isnan(img_interp) | np.isinf(img_interp)
-    
+    # mask_interp = np.isnan(img_interp) | np.isinf(img_interp)
 
     # For large images, smooth the image to avoid detecting noise peaks
-    # if img.shape[0] >= 300:
-    #     img_interp = ndi.gaussian_filter(img_interp, sigma=2, truncate=1)
+    if img.shape[0] >= 300:
+        img_interp = ndi.gaussian_filter(img_interp, sigma=2, truncate=1)
+    mask_interp = np.isinf(img_interp) | np.isnan(img_interp)
 
+    
     #### Hot run
     segmap_hot = detect_sources(img_interp, threshold=hot_snr*bgsd, 
                                  mask=mask_interp, npixels=min_area, connectivity=4)
@@ -288,11 +289,9 @@ def get_segmap(img, mask, bgsd,  min_area=5, hot_snr=20, cold_snr=1.5, nlevels=3
 
         # Grow the mask based on the size of each source
         grow_sigma = max(0.01*img.shape[0], min_area/10)
-        segmask_hot = grow_segmask(segmap_hot, grow_sigma=grow_sigma, area_norm=min_area)
+        segmask_hot = grow_segmask(segmap_hot, grow_sigma=grow_sigma/3, area_norm=min_area)
     else:
         segmask_hot = np.zeros_like(img).astype(bool)
-
-    
 
 
     ####### Cold run ###########################
@@ -306,7 +305,7 @@ def get_segmap(img, mask, bgsd,  min_area=5, hot_snr=20, cold_snr=1.5, nlevels=3
         return None, None
     
     # Deblend the central source only
-    cold_deblended = deblend_sources(img_interp, segmap_cold, npixels=5, contrast=contrast, progress_bar=False, nlevels=nlevels, labels=cold_cent)
+    cold_deblended = deblend_sources(img_interp, segmap_cold, npixels=min_area, contrast=contrast, progress_bar=False, nlevels=nlevels, labels=cold_cent)
 
     ######## Combining the two ###########################
     # 1. Mask all sources in the cold segmap except the central one
@@ -323,7 +322,7 @@ def get_segmap(img, mask, bgsd,  min_area=5, hot_snr=20, cold_snr=1.5, nlevels=3
     segmap_cold_deblended = _deblended_mask(cold_deblended, segmask_hot, cent_labels, cold_cent, overlap_thresh=overlap_thresh)
     segmask_cold_deblended = grow_segmask(segmap_cold_deblended, grow_sigma=min_area/10, area_norm=min_area)
     segmask_cold_deblended = segmap_cold_deblended.data > 0
-
+    
     # Combine all of these masks
     segmask = segmask_hot | segmask_cold | segmask_cold_deblended
 
