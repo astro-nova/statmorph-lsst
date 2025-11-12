@@ -8,8 +8,7 @@ galaxy images. The changes are described in the publication *"statmorph-lsst: qu
 Documentation
 -------------
 
-The installation instructions can be found on
-`statmorph ReadTheDocs <http://statmorph.readthedocs.io/en/latest/>`_.
+You can install the package by cloning/downloading this repository, navigating there, and running `pip install .` The package will be uploaded to pip soon to make the installation simpler.
 
 Full documentation describing the changes to the parent package is in preparation.
 Major changes as of now:
