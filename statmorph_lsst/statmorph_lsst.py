@@ -1,3 +1,12 @@
+# TODO
+# Edit the Sersic routine to account for pixelization 
+# Add a convenience function to save the output (including the flag)
+# Write a guide on contributing
+# Update docs
+# Update sky routine
+
+
+
 """
 Python code for calculating non-parametric morphological diagnostics
 of galaxy images.
@@ -549,6 +558,12 @@ class SourceMorphology(object):
         A set of isophote levels (in image flux units) at which to
         compute the asymmetry. If not provided, isophotal asymmetry 
         is not calculated.
+    interpolate_mask : bool, optional
+        Whether to interpolate over masked pixels in the image. If True,
+        masked pixels will be interpolated before analysis. This is only
+        used in constructing the Gini, MID, and Shape Asymmetry segmaps.
+        Then non-interpolated values are used in computation.
+        The default value is True.
     boxcar_size_mid : float, optional
         In the MID calculations, this is the size (in pixels)
         of the constant kernel used to regularize the MID segmap.
@@ -624,6 +639,7 @@ class SourceMorphology(object):
                  petro_extent_cas=1.5, petro_fraction_cas=0.25,
                  asymmetry_center_kind='rms',
                  asymmetry_isophotes=None,
+                 interpolate_mask=True,
                  boxcar_size_mid=3.0, niter_bh_mid=5, sigma_mid=1.0,
                  petro_extent_flux=2.0, boxcar_size_shape_asym=3.0,
                  sersic_fitting_args=None, sersic_model_args=None,
@@ -654,6 +670,7 @@ class SourceMorphology(object):
         self._petro_extent_flux = petro_extent_flux
         self._asymmetry_center_kind = asymmetry_center_kind
         self._asymmetry_isophotes = asymmetry_isophotes
+        self._interpolate_mask = interpolate_mask
         self._boxcar_size_shape_asym = boxcar_size_shape_asym
         self._sersic_fitting_args = sersic_fitting_args
         self._sersic_model_args = sersic_model_args
@@ -1181,11 +1198,15 @@ class SourceMorphology(object):
         masked rows/columns/streaks running across the source do not
         cause the segmentation map to split.
         """
-        image = self._image[self._slice_stamp]
-        mask = self._mask_stamp
-        image_interp, mask_interp = _interpolate_missing_pixels(image, mask)
-        self._mask_stamp_interp = mask_interp
-        image_interp[mask_interp] = 0
+        if self._interpolate_mask:
+            image = self._image[self._slice_stamp]
+            mask = self._mask_stamp
+            image_interp, mask_interp = _interpolate_missing_pixels(image, mask)
+            self._mask_stamp_interp = mask_interp
+            image_interp[mask_interp] = 0
+        else:
+            image_interp = self._cutout_stamp_maskzeroed
+            self._mask_stamp_interp = self._mask_stamp
         return image_interp
 
     @lazyproperty
