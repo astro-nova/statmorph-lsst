@@ -29,6 +29,10 @@ Bias diagnostics and corrections
 You can see the dependence of each parameter in this suite in the `diagnostic_plots <https://github.com/astro-nova/statmorph-lsst/tree/master/diagnostic_plots>`_ folder. Bias corrections are
 derived where possible with SymbolicRegression and are available in the paper (for now).
 
+Changelog
+---------------------
+- 2026-02-18: Sersic fitting now subsamples the model to better capture the central regions. 
+
 Citing
 ------
 
