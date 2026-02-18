@@ -80,8 +80,10 @@ def get_baseline(df_raw, res_col, base_res, snr_col, base_snr, param):
     """
     # Convert radius and centroid columns to kpc
     df = df_raw.copy()
-    if 'base_rp' in df.columns:
-        df.drop(columns=['base_rp', f'base_{param}', f'd_{param}', f'f_{param}'], inplace=True)
+    if 'base_rp_kpc' in df.columns:
+        df.drop(columns=['base_rp_kpc'], inplace=True)
+    if f'base_{param}' in df.columns:
+        df.drop(columns=[f'base_{param}', f'd_{param}', f'f_{param}'], inplace=True)
 
     radii = ['r20','r50','r80','rmax_circ','rmax_ellip','rhalf_circ','rhalf_ellip','sersic_rhalf','rpetro_circ','rpetro_ellip']
     centers = ['xc_centroid', 'yc_centroid', 'xc_asymmetry', 'yc_asymmetry', 'sersic_xc', 'sersic_yc']
@@ -104,11 +106,11 @@ def get_baseline(df_raw, res_col, base_res, snr_col, base_snr, param):
     # For every row, find the baseline galaxy row, and fetch the parameter value at the baseline. Assign to all rows of that galaxy
     # Also store the baseline Petrosian radius
     base_params =  df.loc[baselines.values][['galaxy', param, 'rpetro_circ_kpc']]
-    base_params = base_params.rename(columns={param:f'base_{param}', 'rpetro_circ_kpc':'base_rp'})
+    base_params = base_params.rename(columns={param:f'base_{param}', 'rpetro_circ_kpc':'base_rp_kpc'})
     df = pd.merge(df, base_params, left_on='galaxy', right_on='galaxy', how='left')
 
     # Calculate effective resolution for every row
-    df['nres'] = 1000*df.base_rp/df.pxscale_pc
+    df['nres'] = 1000*df.base_rp_kpc/df.pxscale_pc
     df['log_nres'] = np.log10(df['nres'])
 
     # Calculate errors
@@ -204,7 +206,10 @@ def plot_bias_grid(df, paramlabel, snr_col, base_snr, res_col, base_res, nbins=1
     dv = (vmax-vmin)
     vmin -= 0.1*dv
     vmax += 0.1*dv
-    midpoint = (0-vmin)/(vmax-vmin)
+    if (vmin<0) and (vmax>0):
+        midpoint = (0-vmin)/(vmax-vmin)
+    else:
+        midpoint = 0.5
     colors = [(0,'#F45B69'),  (midpoint, '#fff'), (1,'#06BCC1')]
     my_cmap = mpl.colors.LinearSegmentedColormap.from_list('my_cmap', colors, N=100)
 
@@ -215,7 +220,7 @@ def plot_bias_grid(df, paramlabel, snr_col, base_snr, res_col, base_res, nbins=1
     ###### Plotting the bias as a colormesh ######
     smoothed = ndi.gaussian_filter(Qs[1],2,truncate=2)
     im1 = plt.pcolormesh(Res, Snr, Qs[1], cmap=my_cmap, vmin=vmin, vmax=vmax, edgecolor='face', lw=0.5, shading='gouraud')
-
+    
     ###### Plotting the uncertainty as contours ######
     # Upscale dQ for smoother contours
     scale = 2
@@ -428,6 +433,11 @@ def plot_correction(df, param, paramlabel, reslim=5, snrlim=2, xlims=None, noisy
     ylabels = [f'{paramlabel}', f'Corrected {paramlabel}']
     for ax, yparam, ylabel in zip(axs, yparams, ylabels):
 
+        # If no correction, we skip the right panel
+        if ax == axs[1] and df[yparam].isna().all():
+            ax.annotate('No correction applied', xy=(0.5, 0.5), xycoords='axes fraction', ha='center', va='center')
+            continue
+
         plot_data = df[ (df[yparam] >= xmin) & (df[yparam] <= xmax)].dropna(subset=[f'base_{param}', yparam, 'nres', 'snr_px'])
         
         # Smooth the data with a Gaussian KDE
@@ -494,23 +504,26 @@ def plot_correction(df, param, paramlabel, reslim=5, snrlim=2, xlims=None, noisy
 
     return fig
 
-def symbolic_correction(df, param, res_col, snr_col, julia_cat, row_idx=None):
+def symbolic_correction(df, param, res_col, snr_col, corr_fun=None, julia_cat=None, row_idx=None):
     """Apply the Julia symbolic regression correction to the DataFrame. Either applies the correction from row `row_idx`, 
     or the simplest correction with Score>1 if `row_idx` is None.
     Args:
         df (pd.DataFrame): DataFrame containing the rows to correct
         param (str): Name of the parameter to correct
-        julia_res_col (str): Name of the column containing resolution values used in Julia
-        julia_snr_col (str): Name of the column containing SNR values used in Julia
+        res_col (str): Name of the column containing resolution values used in Julia
+        snr_col (str): Name of the column containing SNR values used in Julia
+        corr_fun (function): Function to use for correction. If None, uses the Julia symbolic regression results.
         julia_cat (pd.DataFrame): DataFrame containing the Julia symbolic regression results.
         row_idx (int): Index of the row in `julia_cat` to use for correction. If None, uses the simplest correction with Score>1.
     Returns:
         pd.DataFrame: DataFrame with an additional column for the corrected parameter"""
 
-    if row_idx is None:
-        row = julia_cat[(julia_cat.Score > 1)].sort_values(by='Complexity').iloc[0]
-    else:
-        row = julia_cat.iloc[row_idx]
+    # Load the Julia symbolic regression results if not provided
+    if corr_fun is None:
+        if row_idx is None:
+            row = julia_cat[(julia_cat.Score > 1)].sort_values(by='Complexity').iloc[0]
+        else:
+            row = julia_cat.iloc[row_idx]
 
     # Julia doesn't do logs of columns
     julia_res_col = 'nres' if res_col == 'log_nres' else res_col # Symbolic regression can take the log, if needed
@@ -520,7 +533,8 @@ def symbolic_correction(df, param, res_col, snr_col, julia_cat, row_idx=None):
     df_corr = df.copy()
 
     # Parse the equation
-    corr_fun = julia_str_to_func(row.Equation)
+    if corr_fun is None:
+        corr_fun = julia_str_to_func(row.Equation)
 
     # Apply the correction
     df_corr[f'{param}_corr'] = df_corr.apply(lambda x: corr_fun(x[f'base_{param}'], x[julia_res_col], x[julia_snr_col]), axis=1)
