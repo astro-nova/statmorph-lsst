@@ -1205,7 +1205,7 @@ class SourceMorphology(object):
             self._mask_stamp_interp = mask_interp
             image_interp[mask_interp] = 0
         else:
-            image_interp = self._cutout_stamp_maskzeroed
+            image_interp = self._cutout_stamp_maskzeroed.copy()
             self._mask_stamp_interp = self._mask_stamp
         return image_interp
 
@@ -2814,7 +2814,7 @@ class SourceMorphology(object):
             isophote_mask = self._cutout_stamp_maskzeroed >= level
             
             # Smooth the isophote mask slightly to avoid pixelation effects
-            kernel_size = sorted([3, isophote_mask.shape[0]/100, 5])[1]
+            kernel_size = sorted([2, isophote_mask.shape[0]/100, 4])[1]
             kernel = Gaussian2DKernel(kernel_size)
             isophote_mask = convolve_fft(isophote_mask.astype(float), kernel, mask=self._mask_stamp, boundary='wrap')
             isophote_mask = (isophote_mask > 0.5).astype(bool)    
