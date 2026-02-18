@@ -379,7 +379,33 @@ def _interpolate_missing_pixels(image: np.ndarray, mask: np.ndarray, interpolato
     mask_interp = np.isnan(image_interp)
     return image_interp, mask_interp
 
-class ConvolvedSersic2D(models.Sersic2D):
+class SubsampledSersic2D(models.Sersic2D):
+    """
+    Sersic2D model that is subsampled by a factor of 3n in each dimension before evaluation, where n is the Sersic index.
+    This  mitigates the issue of discretization at pixel scale of the original astropy modelling approach.
+    """
+    @classmethod
+    def evaluate(cls, x, y, amplitude, r_eff, n, x_0, y_0, ellip, theta):
+
+        # Subsample more for high n, less for low n. Make it 
+        n_subsample = int(3*n)
+        n_subsample = max(1, min(n_subsample, 5))  # Clamp between 1 and 5
+
+        # Subsample by a factor of 10 in each dimension
+        ny, nx = x.shape
+        ny_sub = n_subsample * ny
+        nx_sub = n_subsample * nx
+        y_sub, x_sub = np.mgrid[0:ny_sub, 0:nx_sub].astype(float)
+        z_sub = super().evaluate(
+            x_sub, y_sub, amplitude, r_eff*n_subsample, n,
+            x_0*n_subsample, y_0*n_subsample, ellip, theta)
+        
+        z = skimage.transform.downscale_local_mean(z_sub, (n_subsample, n_subsample))  # Resize back to original shape
+        return z
+    
+    
+
+class ConvolvedSersic2D(SubsampledSersic2D):
     """
     Sersic2D model convolved with a PSF (provided by the user as a
     numpy array).
@@ -401,7 +427,7 @@ class ConvolvedSersic2D(models.Sersic2D):
         """
         Evaluate the ConvolvedSersic2D model.
         """
-        z = models.Sersic2D.evaluate(
+        z = SubsampledSersic2D.evaluate(
             x, y, amplitude, r_eff, n, x_0, y_0, ellip, theta)
         if self.psf is None:
             raise AssertionError('Must specify PSF using set_psf method.')
@@ -438,9 +464,9 @@ class DoubleSersic2D(Fittable2DModel):
         Evaluate the DoubleSersic2D model.
         """
         return (
-            models.Sersic2D.evaluate(
+            SubsampledSersic2D.evaluate(
                 x, y, amplitude_1, r_eff_1, n_1, x_0, y_0, ellip_1, theta_1)
-            + models.Sersic2D.evaluate(
+            + SubsampledSersic2D.evaluate(
                 x, y, amplitude_2, r_eff_2, n_2, x_0, y_0, ellip_2, theta_2)
         )
 
