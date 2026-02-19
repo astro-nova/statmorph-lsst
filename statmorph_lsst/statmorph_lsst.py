@@ -663,7 +663,7 @@ class SourceMorphology(object):
                  n_sigma_outlier=10, annulus_width=1.0,
                  eta=0.2, petro_fraction_gini=0.2, skybox_size=32,
                  petro_extent_cas=1.5, petro_fraction_cas=0.25,
-                 asymmetry_center_kind='rms',
+                 asymmetry_center_kind='cas',
                  asymmetry_isophotes=None,
                  interpolate_mask=True,
                  boxcar_size_mid=3.0, niter_bh_mid=5, sigma_mid=1.0,
