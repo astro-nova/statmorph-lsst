@@ -388,7 +388,7 @@ class SubsampledSersic2D(models.Sersic2D):
     def evaluate(cls, x, y, amplitude, r_eff, n, x_0, y_0, ellip, theta):
 
         # Subsample more for high n, less for low n. Make it 
-        n_subsample = int(3*n)
+        n_subsample = int(3 * np.asarray(n).ravel()[0])
         n_subsample = max(1, min(n_subsample, 5))  # Clamp between 1 and 5
 
         # Subsample by a factor of 10 in each dimension
